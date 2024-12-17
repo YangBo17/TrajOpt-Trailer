@@ -1,0 +1,431 @@
+using Printf
+using ProgressMeter
+using Test
+N = 1
+include("bilevel_env_trailer.jl")
+include("get_PDHG_para_trailer.jl")
+include("PDHG_solver_trailer.jl")
+include("SOS_trailer.jl")
+max_iter = 3000
+α = 0.2
+β = 0.4
+
+s = 3
+d = 7
+K = 1
+N = 1
+n_P = d+1
+m_H = 2
+m_L = K * 2 * (s+1)
+P = rand(n_P, n_P)
+Popt = P * P'
+Hopt = rand(m_H, n_P)
+ropt = rand(m_H)
+Lopt = rand(m_L, n_P)
+gopt = rand(m_L)
+d2 = Int((d+1) / 2)
+
+Fopt, Gopt = calc_FG(d)
+FG = cat(Fopt, Gopt, dims=3)
+
+# FG_list = []
+# for i in 1:m_L 
+#     FG = rand(d2, d2)
+#     FG = FG * FG'
+#     push!(FG_list, FG)
+# end
+# FG = FG_list
+
+Eopt, eopt = calc_para(Popt, Hopt, ropt, Lopt, gopt)
+
+function PDHG_solver(Eopt, eopt, α, β, FG; max_iter=max_iter)
+    
+    X = randn(d2, d2, K*N) .- 0.5
+    λ = randn(m_L, K*N) .- 0.5
+
+    λ_tmp = copy(λ)
+
+    I_E = Matrix(1.0I, size(Eopt))
+    IminusEopt = I_E - Eopt
+    dX = zeros(size(X))
+
+    time0 = time()
+    begin
+        X_list = []
+        λ_list = []
+        for k in 1:max_iter
+            X_prev = copy(X)
+            λ_prev = copy(λ)
+            for a in axes(X, 1), b in axes(X, 2), j in axes(X, 3), i in axes(FG, 1)
+                X[a, b, j] -= α * λ[i, j] * FG[i][a, b]
+            end
+            X = projection(X)
+            for a in axes(X, 1), b in axes(X, 2), j in axes(X, 3), i in axes(FG, 1)
+                dX = 2 * X - X_prev
+                λ_tmp[i, j] = β * FG[i][a, b] * dX[b, a, j]  
+            end
+            λ = λ + λ_tmp
+            tmp = copy(eopt)
+            λ = reshape(λ, K*N*m_L)
+            tmp = IminusEopt * λ .- β * tmp
+            λ = reshape(tmp, m_L, K*N)
+            push!(X_list, copy(X))
+            push!(λ_list, copy(λ))
+        end
+    end
+    time1 = time()
+    sol_time = time1 - time0
+    Xstar = X
+    λstar = λ
+    return Xstar, λstar, X_list, λ_list, sol_time
+end
+
+function calc_sopt2(FG, Xstar)
+    sopt = zeros(m_L, K*N)
+    for i in axes(FG,1), j in axes(Xstar,3), a in axes(Xstar,2), b in axes(Xstar,1)
+        sopt[i, j] = FG[i][a, b] * Xstar[b, a, j]
+    end
+    sopt = reshape(sopt, K*N*m_L)
+    return sopt
+end
+
+function PDHG_SDP(α, β, FG, Popt, Hopt, ropt, Lopt, gopt; dP=nothing, dL=nothing, dH=nothing)
+    if !isnothing(dP)
+        Popt = Popt + dP
+        Popt = (Popt + Popt') / 2
+    elseif !isnothing(dL)
+        Lopt = Lopt + dL
+    elseif !isnothing(dH)
+        Hopt = Hopt + dH
+    end
+    Eopt, eopt = calc_para(Popt, Hopt, ropt, Lopt, gopt)
+    Xstar, λstar, X_list, λ_list, sol_time = PDHG_GPU_solver(Eopt, eopt, α, β, FG; max_iter=max_iter)
+    sopt = calc_sopt(FG,Xstar)
+    cstar = calc_cstar(Hopt,ropt,Lopt,gopt,sopt)
+    λstar = calc_λstar(λstar)
+    νstar = calc_νstar(cstar,λstar,Popt,Hopt,Lopt)
+    obj = calc_obj(T,cstar,Popt; time_penalty=false)
+    Lag = calc_Lag_new(T,Popt,Hopt,ropt,Lopt,gopt,sopt,cstar,λstar,νstar; time_penalty=false)
+
+    @show 1
+    @show obj 
+    @show Lag 
+    kkt_01 = 2Popt * cstar + Lopt' * λstar + Hopt' * νstar
+    kkt_02 = Lopt * cstar - sopt - gopt
+    kkt_03 = Hopt * cstar - ropt
+    lag_λ = λstar' * (Lopt * cstar - gopt - sopt)
+    lag_ν = νstar' * (Hopt * cstar - ropt)
+    @show kkt01_val = norm(kkt_01)
+    @show kkt02_val = norm(kkt_02)
+    @show kkt03_val = norm(kkt_03)
+    @show lag_λ + lag_ν
+    @show Lag - obj
+    @show norm(λstar)
+    @show norm(νstar)
+    @show norm(Lopt * cstar - gopt - sopt)
+    @show norm(Hopt * cstar - ropt)
+
+    return X_list, λ_list, sopt, sol_time, obj, Lag, cstar, λstar, νstar
+end
+
+X_list, λ_list, sopt, sol_time, obj, Lag, cstar, λstar, νstar = PDHG_SDP(α, β, FG, Popt, Hopt, ropt, Lopt, gopt);
+obj0 = obj
+Lag0 = Lag
+@printf("Obj = %.3e\n", obj)
+@printf("Lag = %.3e\n", Lag)
+kkt_01 = 2Popt * cstar + Lopt' * λstar + Hopt' * νstar
+kkt_02 = Lopt * cstar - sopt - gopt
+kkt_03 = Hopt * cstar - ropt
+lag_λ = λstar' * (Lopt * cstar - gopt - sopt)
+lag_ν = νstar' * (Hopt * cstar - ropt)
+@printf("Obj = %.3e\n", obj)
+@printf("Lag = %.3e\n", Lag)
+@printf("kkt01 = %.3e\n", norm(kkt_01))
+@printf("kkt02 = %.3e\n", norm(kkt_02))
+@printf("kkt03 = %.3e\n", norm(kkt_03))
+@printf("c_norm = %.3e\n", norm(cstar))
+@printf("λ_norm = %.3e\n", norm(λstar))
+@printf("ν_norm = %.3e\n", norm(νstar))
+
+##
+dz_dP_AG = zeros(size(Popt))
+for i in 1:size(Popt,1), j in 1:size(Popt,2)
+    dz_dP_AG[i,j] = cstar[i] * cstar[j]
+end
+
+Len1 = length(cstar)
+Len2 = length(cstar)
+progress = Progress(length(eachindex(cstar[1:Len1])) * length(eachindex(cstar[1:Len2])))
+
+dz_dP_FD = zeros(size(Popt))
+for i in eachindex(cstar[1:Len1]), j in eachindex(cstar[1:Len2])
+    dP = zeros(size(Popt))
+    δ = 0.01
+    dP[i,j] = δ
+    X_list, λ_list, sopt, sol_time, obj, Lag, cstar, λstar, νstar = PDHG_SDP(α, β, FG, Popt, Hopt, ropt, Lopt, gopt; dP=dP);
+    # dz_dP_FD[i,j] = (obj - obj0) / δ
+    dz_dP_FD[i,j] = (Lag - Lag0) / δ
+    GC.gc()
+    next!(progress)
+end
+finish!(progress)
+
+println("dz_dP_AG")
+dz_dP_AG
+
+println("dz_dP_FD")
+dz_dP_FD
+
+println("dz_dP_AG ./ dz_dP_FD")
+dz_dP_AG ./ dz_dP_FD
+
+##
+dz_dL_AG = zeros(size(Lopt))
+for i in 1:size(Lopt,1), j in 1:size(Lopt,2)
+    dz_dL_AG[i,j] = λstar[i] * cstar[j]
+end
+
+Len1 = length(λstar)
+Len2 = length(cstar)
+progress = Progress(length(eachindex(λstar[1:Len1])) * length(eachindex(cstar[1:Len2])))
+
+dz_dL_FD = zeros(size(Lopt))
+for i in eachindex(λstar[1:Len1]), j in eachindex(cstar[1:Len2])
+    dL = zeros(size(Lopt))
+    δ = 0.5
+    dL[i,j] = δ
+    X_list, λ_list, sopt, sol_time, obj, Lag, cstar, λstar, νstar = PDHG_SDP(α, β, FG, Popt, Hopt, ropt, Lopt, gopt; dL=dL);
+    dz_dL_FD[i,j] = (obj - obj0) / δ
+    # dz_dL_FD[i,j] = (Lag - Lag0) / δ
+    GC.gc()
+    next!(progress)
+end
+finish!(progress)
+
+println("dz_dL_AG")
+dz_dL_AG
+
+println("dz_dL_FD")
+dz_dL_FD
+
+println("dz_dL_AG ./ dz_dL_FD")
+dz_dL_AG ./ dz_dL_FD
+
+##
+dz_dH_AG = zeros(size(Hopt))
+for i in 1:size(Hopt,1), j in 1:size(Hopt,2)
+    dz_dH_AG[i,j] = νstar[i] * cstar[j]
+end
+
+Len1 = length(νstar)
+Len2 = length(cstar)
+progress = Progress(length(eachindex(νstar[1:Len1])) * length(eachindex(cstar[1:Len2])))
+
+dz_dH_FD = zeros(size(Hopt))
+for i in eachindex(λstar[1:Len1]), j in eachindex(cstar[1:Len2])
+    dH = zeros(size(Hopt))
+    δ = 0.01
+    dH[i,j] = δ
+    X_list, λ_list, sopt, sol_time, obj, Lag, cstar, λstar, νstar = PDHG_SDP(α, β, FG, Popt, Hopt, ropt, Lopt, gopt; dH=dH);
+    dz_dH_FD[i,j] = (obj - obj0) / δ
+    # dz_dH_FD[i,j] = (Lag - Lag0) / δ
+    GC.gc()
+    next!(progress)
+end
+
+println("dz_dH_AG")
+dz_dH_AG
+
+println("dz_dH_FD")
+dz_dH_FD
+
+println("dz_dH_AG ./ dz_dH_FD")
+dz_dH_AG ./ dz_dH_FD
+
+##
+using JuMP
+using COPT
+
+d = 5
+n_P = d+1
+m_H = 2
+m_L = 8
+P = rand(n_P, n_P)
+Popt = P * P'
+Hopt = rand(m_H, n_P)
+ropt = rand(m_H)
+Lopt = rand(m_L, n_P)
+gopt = rand(m_L)
+d2 = Int((d+1) / 2)
+
+# s = 3
+# d = 7
+# K = 2
+# N = 1
+# n_P = d+1
+# m_H = 2
+# m_L = K * 2 * (s+1)
+# P = rand(n_P, n_P)
+# Popt = P * P'
+# Hopt = rand(m_H, n_P)
+# ropt = rand(m_H)
+# Lopt = rand(m_L, n_P)
+# gopt = rand(m_L)
+# d2 = Int((d+1) / 2)
+
+FG_list = []
+for i in 1:m_L 
+    FG = rand(d2, d2)
+    FG = FG * FG'
+    push!(FG_list, FG)
+end
+
+function Prob(Popt, Lopt, gopt, Hopt, ropt, FG_list)
+    # solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    solver = optimizer_with_attributes(Mosek.Optimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, cH, Hopt * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    cH_dual = JuMP.dual.(cH)
+    return status, opt_primal, c_primal, X_primal, cL_dual, cH_dual
+end
+
+function Prob_dP(Popt, Lopt, gopt, Hopt, ropt, FG_list, dPopt)
+    Popt_new = Popt + dPopt
+    Popt_new = (Popt_new + Popt_new') / 2
+    # solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    solver = optimizer_with_attributes(Mosek.Optimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt_new)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, cH, Hopt * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    cH_dual = JuMP.dual.(cH)
+    return status, opt_primal, c_primal, X_primal, cL_dual, cH_dual
+end
+
+function Prob_dL(Popt, Lopt, gopt, Hopt, ropt, FG_list, dLopt)
+    Lopt_new = Lopt + dLopt
+    # solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    solver = optimizer_with_attributes(Mosek.Optimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt_new * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, cH, Hopt * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    cH_dual = JuMP.dual.(cH)
+    return status, opt_primal, c_primal, X_primal, cL_dual, cH_dual
+end
+
+function Prob_dH(Popt, Lopt, gopt, Hopt, ropt, FG_list, dHopt)
+    Hopt_new = Hopt + dHopt
+    # solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    solver = optimizer_with_attributes(Mosek.Optimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, cH, Hopt_new * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    cH_dual = JuMP.dual.(cH)
+    return status, opt_primal, c_primal, X_primal, cL_dual, cH_dual
+end
+
+status, opt0_primal, c_primal, X_primal, cL_dual, cH_dual = Prob(Popt, Lopt, gopt, Hopt, ropt, FG_list)
+
+dz_dP_AG = zeros(size(Popt))
+for i in axes(Popt,1), j in axes(Popt,2)
+    dz_dP_AG[i, j] = c_primal[i] * c_primal[j]
+end
+
+dz_dL_AG = zeros(size(Lopt))
+for i in axes(Lopt,1), j in axes(Lopt,2)
+    dz_dL_AG[i, j] = -cL_dual[i] * c_primal[j]
+end
+
+dz_dH_AG = zeros(size(Hopt))
+for i in axes(Hopt,1), j in axes(Hopt,2)
+    dz_dH_AG[i, j] = -cH_dual[i] * c_primal[j]
+end
+
+dz_dP_FD = zeros(size(Popt))
+for i in axes(Popt,1), j in axes(Popt,2)
+    dPopt = zeros(size(Popt))
+    h = 1e-3
+    dPopt[i, j] = h
+    status, opt_primal, c_primal, X_primal, cL_dual, cH_dual = Prob_dP(Popt, Lopt, gopt, Hopt, ropt, FG_list, dPopt)
+    dz_dP_FD[i, j] = (opt_primal - opt0_primal) / h
+end
+
+dz_dL_FD = zeros(size(Lopt))
+for i in axes(Lopt,1), j in axes(Lopt,2)
+    dLopt = zeros(size(Lopt))
+    h = 1e-3
+    dLopt[i, j] = h
+    status, opt_primal, c_primal, X_primal, cL_dual = Prob_dL(Popt, Lopt, gopt, Hopt, ropt, FG_list, dLopt)
+    dz_dL_FD[i, j] = (opt_primal - opt0_primal) / h
+end
+
+dz_dH_FD = zeros(size(Hopt))
+for i in axes(Hopt,1), j in axes(Hopt,2)
+    dHopt = zeros(size(Hopt))
+    h = 1e-3
+    dHopt[i, j] = h
+    status, opt_primal, c_primal, X_primal, cL_dual = Prob_dH(Popt, Lopt, gopt, Hopt, ropt, FG_list, dHopt)
+    dz_dH_FD[i, j] = (opt_primal - opt0_primal) / h
+end
+
+println("dz_dP_AG ./ dz_dP_FD")
+dz_dP_AG ./ dz_dP_FD
+
+println("dz_dL_AG ./ dz_dL_FD")
+dz_dL_AG ./ dz_dL_FD
+
+println("dz_dH_AG ./ dz_dH_FD")
+dz_dH_AG ./ dz_dH_FD
+

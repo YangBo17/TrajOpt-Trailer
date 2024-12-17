@@ -1,0 +1,267 @@
+N = 2
+include("bilevel_env_car.jl")
+include("get_PDHG_para_car.jl")
+include("PDHG_solver_car.jl")
+include("SOS_car.jl")
+using Random
+Random.seed!(123)
+T = ones(N) * 3.0
+Eopt, eopt, Popt, Hopt, ropt, Lopt, gopt, Ropt = calc_Para(T);
+@show 2*(L1+L2)*seg_N
+@show Mat_size = size(Popt,1) + size(Lopt, 1) + size(Hopt, 1)
+d2 = Int((d-1)/2+1)
+
+##
+function TrajOpt(Popt, Lopt, gopt, Hopt, ropt, FG)
+    solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    model = Model(solver)
+    set_silent(model)
+    @show N
+    @show m
+    @show d+1
+    @variable(model, c[1:(d+1)*m*N])
+    @variable(model, X[1:d2,1:d2,1:2K*N])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+    sopt_large = Matrix{AffExpr}(undef, 2*(d+1), 2*K*N)
+    for i in axes(FG, 3), j in axes(X, 3), a in axes(FG, 1), b in axes(FG, 2)
+        sopt_large[i, j] = FG[a, b, i] * X[b, a, j]
+    end
+    sopt = sopt_large[1:d+1, 1:K*N] + sopt_large[d+2:end, K*N+1:end]
+    sopt = reshape(sopt, K*N*(d+1))
+    @constraint(model, cL, Lopt * c == gopt + sopt)
+    @constraint(model, Hopt * c == ropt)
+    @constraint(model, [k=1:2K*N], X[:,:,k] in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(c1)
+    return status, opt_primal, c_primal, X_primal, cL_dual
+end
+
+function TrajOpt(Popt, Lopt, gopt, Hopt, ropt, FG, dLopt)
+    solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)*m*N])
+    @variable(model, X[1:d2,1:d2,1:2K*N])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+    sopt_large = Matrix{AffExpr}(undef, 2*(d+1), 2*K*N)
+    for i in axes(FG, 3), j in axes(X, 3), a in axes(FG, 1), b in axes(FG, 2)
+        sopt_large[i, j] = FG[a, b, i] * X[b, a, j]
+    end
+    sopt = sopt_large[1:d+1, 1:K*N] + sopt_large[d+2:end, K*N+1:end]
+    sopt = reshape(sopt, K*N*(d+1))
+    @constraint(model, cL, Lopt * c == gopt + sopt)
+    @constraint(model, Hopt * c == ropt)
+    @constraint(model, [k=1:2K*N], X[:,:,k] in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    return status, opt_primal, c_primal, X_primal, cL_dual
+end
+
+status, opt_primal, c_primal, X_primal, cL_dual = TrajOpt(Popt, Lopt, gopt, Hopt, ropt, FG)
+@show status
+
+cstar = reshape(c_primal, d+1, m, N)
+data = calc_traj(T, cstar; dt=0.02)
+
+##
+x = [data[i].x for i in eachindex(data)];
+y = [data[i].y for i in eachindex(data)];  
+fig_opt1 = plot(fig_env, x, y)
+
+
+##
+using JuMP
+using COPT
+
+d = 5
+n_P = d+1
+m_H = 2
+m_L = 5
+P = rand(n_P, n_P)
+Popt = P * P'
+Hopt = rand(m_H, n_P)
+ropt = rand(m_H)
+Lopt = rand(m_L, n_P)
+gopt = rand(m_L)
+d2 = Int((d+1) / 2)
+FG_list = []
+for i in 1:m_L
+    FG = rand(d2, d2)
+    FG = FG * FG'
+    push!(FG_list, FG)
+end
+
+function Prob(Popt, Lopt, gopt, Hopt, ropt, FG_list)
+    solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, Hopt * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    return status, opt_primal, c_primal, X_primal, cL_dual
+end
+
+function Prob(Popt, Lopt, gopt, Hopt, ropt, FG_list)
+    solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, cH, Hopt * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    cH_dual = JuMP.dual.(cH)
+    return status, opt_primal, c_primal, X_primal, cL_dual, cH_dual
+end
+
+function Prob_dP(Popt, Lopt, gopt, Hopt, ropt, FG_list, dPopt)
+    Popt_new = Popt + dPopt
+    Popt_new = (Popt_new + Popt_new') / 2
+    solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt_new)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, cH, Hopt * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    cH_dual = JuMP.dual.(cH)
+    return status, opt_primal, c_primal, X_primal, cL_dual, cH_dual
+end
+
+function Prob_dL(Popt, Lopt, gopt, Hopt, ropt, FG_list, dLopt)
+    Lopt_new = Lopt + dLopt
+    solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt_new * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, cH, Hopt * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    cH_dual = JuMP.dual.(cH)
+    return status, opt_primal, c_primal, X_primal, cL_dual, cH_dual
+end
+
+function Prob_dH(Popt, Lopt, gopt, Hopt, ropt, FG_list, dHopt)
+    Hopt_new = Hopt + dHopt
+    solver = optimizer_with_attributes(COPT.ConeOptimizer)
+    model = Model(solver)
+    @variable(model, c[1:(d+1)])
+    @variable(model, X[1:d2,1:d2])
+    @variable(model, ρ >= 0)
+    @objective(model, Min, ρ)
+    @constraint(model, [ρ c'; c inv(Popt)] in PSDCone())
+
+    @constraint(model, cL[k=1:m_L], (Lopt * c)[k] == gopt[k] + sum(FG_list[k][i, j] * X[j, i] for i in 1:d2, j in 1:d2))
+    @constraint(model, cH, Hopt_new * c == ropt)
+    @constraint(model, X in PSDCone())
+    JuMP.optimize!(model)
+    status = JuMP.termination_status(model)
+    opt_primal = JuMP.objective_value(model)
+    c_primal = JuMP.value.(c)
+    X_primal = JuMP.value.(X)
+    cL_dual = JuMP.dual.(cL)
+    cH_dual = JuMP.dual.(cH)
+    return status, opt_primal, c_primal, X_primal, cL_dual, cH_dual
+end
+
+status, opt0_primal, c_primal, X_primal, cL_dual, cH_dual = Prob(Popt, Lopt, gopt, Hopt, ropt, FG_list)
+
+dz_dP_AG = zeros(size(Popt))
+for i in axes(Popt,1), j in axes(Popt,2)
+    dz_dP_AG[i, j] = c_primal[i] * c_primal[j]
+end
+
+dz_dL_AG = zeros(size(Lopt))
+for i in axes(Lopt,1), j in axes(Lopt,2)
+    dz_dL_AG[i, j] = -cL_dual[i] * c_primal[j]
+end
+
+dz_dH_AG = zeros(size(Hopt))
+for i in axes(Hopt,1), j in axes(Hopt,2)
+    dz_dH_AG[i, j] = -cH_dual[i] * c_primal[j]
+end
+
+dz_dP_FD = zeros(size(Popt))
+for i in axes(Popt,1), j in axes(Popt,2)
+    dPopt = zeros(size(Popt))
+    h = 1e-3
+    dPopt[i, j] = h
+    status, opt_primal, c_primal, X_primal, cL_dual, cH_dual = Prob_dP(Popt, Lopt, gopt, Hopt, ropt, FG_list, dPopt)
+    dz_dP_FD[i, j] = (opt_primal - opt0_primal) / h
+end
+
+dz_dL_FD = zeros(size(Lopt))
+for i in axes(Lopt,1), j in axes(Lopt,2)
+    dLopt = zeros(size(Lopt))
+    h = 1e-3
+    dLopt[i, j] = h
+    status, opt_primal, c_primal, X_primal, cL_dual = Prob_dL(Popt, Lopt, gopt, Hopt, ropt, FG_list, dLopt)
+    dz_dL_FD[i, j] = (opt_primal - opt0_primal) / h
+end
+
+dz_dH_FD = zeros(size(Hopt))
+for i in axes(Hopt,1), j in axes(Hopt,2)
+    dHopt = zeros(size(Hopt))
+    h = 1e-3
+    dHopt[i, j] = h
+    status, opt_primal, c_primal, X_primal, cL_dual = Prob_dH(Popt, Lopt, gopt, Hopt, ropt, FG_list, dHopt)
+    dz_dH_FD[i, j] = (opt_primal - opt0_primal) / h
+end
+
+dz_dP_AG ./ dz_dP_FD
+
+dz_dL_AG ./ dz_dL_FD
+
+dz_dH_AG ./ dz_dH_FD
+

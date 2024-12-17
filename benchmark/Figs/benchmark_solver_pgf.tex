@@ -1,0 +1,100 @@
+% Recommended preamble:
+% \usetikzlibrary{arrows.meta}
+% \usetikzlibrary{backgrounds}
+% \usepgfplotslibrary{patchplots}
+% \usepgfplotslibrary{fillbetween}
+% \pgfplotsset{%
+%     layers/standard/.define layer set={%
+%         background,axis background,axis grid,axis ticks,axis lines,axis tick labels,pre main,main,axis descriptions,axis foreground%
+%     }{
+%         grid style={/pgfplots/on layer=axis grid},%
+%         tick style={/pgfplots/on layer=axis ticks},%
+%         axis line style={/pgfplots/on layer=axis lines},%
+%         label style={/pgfplots/on layer=axis descriptions},%
+%         legend style={/pgfplots/on layer=axis descriptions},%
+%         title style={/pgfplots/on layer=axis descriptions},%
+%         colorbar style={/pgfplots/on layer=axis descriptions},%
+%         ticklabel style={/pgfplots/on layer=axis tick labels},%
+%         axis background@ style={/pgfplots/on layer=axis background},%
+%         3d box foreground style={/pgfplots/on layer=axis foreground},%
+%     },
+% }
+
+\begin{tikzpicture}[/tikz/background rectangle/.style={fill={rgb,1:red,1.0;green,1.0;blue,1.0}, fill opacity={1.0}, draw opacity={1.0}}, show background rectangle]
+\begin{axis}[point meta max={nan}, point meta min={nan}, legend cell align={left}, legend columns={3}, title={}, title style={at={{(0.5,1)}}, anchor={south}, font={{\fontsize{14 pt}{18.2 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}, align={center}}, legend style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, line width={1}, solid, fill={rgb,1:red,1.0;green,1.0;blue,1.0}, fill opacity={1.0}, text opacity={1.0}, font={{\fontsize{16 pt}{20.8 pt}\selectfont}}, text={rgb,1:red,0.0;green,0.0;blue,0.0}, cells={anchor={center}}, at={(0.98, 0.98)}, anchor={north east}}, axis background/.style={fill={rgb,1:red,1.0;green,1.0;blue,1.0}, opacity={1.0}}, anchor={north west}, xshift={1.0mm}, yshift={-1.0mm}, width={150.4mm}, height={99.6mm}, scaled x ticks={false}, xlabel={Number of PSD Cones}, x tick style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}}, x tick label style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}, rotate={0}}, xlabel style={at={(ticklabel cs:0.5)}, anchor=near ticklabel, at={{(ticklabel cs:0.5)}}, anchor={near ticklabel}, font={{\fontsize{16 pt}{20.8 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, xmajorgrids={true}, xmin={376.64}, xmax={2191.36}, xticklabels={{$500$,$1000$,$1500$,$2000$}}, xtick={{500.0,1000.0,1500.0,2000.0}}, xtick align={inside}, xticklabel style={font={{\fontsize{14 pt}{18.2 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, x grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, axis x line*={left}, x axis line style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, line width={1}, solid}, scaled y ticks={false}, ylabel={Computation Time (s)}, y tick style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}}, y tick label style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}, rotate={0}}, ylabel style={at={(ticklabel cs:0.5)}, anchor=near ticklabel, at={{(ticklabel cs:0.5)}}, anchor={near ticklabel}, font={{\fontsize{16 pt}{20.8 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, ymode={log}, log basis y={10}, ymajorgrids={true}, ymin={0.0888122659461086}, ymax={602.1898600408746}, yticklabels={{$10^{0}$,$10^{2}$}}, ytick={{1.0,100.0}}, ytick align={inside}, yticklabel style={font={{\fontsize{14 pt}{18.2 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, y grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, axis y line*={left}, y axis line style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, line width={1}, solid}, colorbar={false}]
+    \addplot[color={rgb,1:red,0.1804;green,0.5451;blue,0.3412}, name path={b8af4db2-aba5-44a6-9c5e-9bbaf19105e0}, draw opacity={1.0}, line width={2}, solid, mark={*}, mark size={3.75 pt}, mark repeat={1}, mark options={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, fill={rgb,1:red,0.1804;green,0.5451;blue,0.3412}, fill opacity={1.0}, line width={0.75}, rotate={0}, solid}]
+        table[row sep={\\}]
+        {
+            \\
+            428.0  0.213  \\
+            642.0  0.218  \\
+            856.0  0.229  \\
+            1070.0  0.236  \\
+            1284.0  0.264  \\
+            1498.0  0.291  \\
+            1712.0  0.31  \\
+            1926.0  0.342  \\
+            2140.0  0.398  \\
+        }
+        ;
+    \addlegendentry {Ours}
+    \addplot[color={rgb,1:red,0.502;green,0.0;blue,0.502}, name path={7f05984c-37b6-4dae-b770-094ab3078592}, draw opacity={1.0}, line width={2}, solid, mark={diamond*}, mark size={3.75 pt}, mark repeat={1}, mark options={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, fill={rgb,1:red,0.502;green,0.0;blue,0.502}, fill opacity={1.0}, line width={0.75}, rotate={0}, solid}]
+        table[row sep={\\}]
+        {
+            \\
+            428.0  0.306  \\
+            642.0  0.51  \\
+            856.0  1.252  \\
+            1070.0  1.575  \\
+            1284.0  2.367  \\
+            1498.0  2.494  \\
+            1712.0  2.616  \\
+            1926.0  2.923  \\
+            2140.0  4.674  \\
+        }
+        ;
+    \addlegendentry {COPT}
+    \addplot[color={rgb,1:red,0.2549;green,0.4118;blue,0.8824}, name path={3afcd8ad-1f64-47d3-99dd-546e6959f39f}, draw opacity={1.0}, line width={2}, solid, mark={triangle*}, mark size={3.75 pt}, mark repeat={1}, mark options={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, fill={rgb,1:red,0.2549;green,0.4118;blue,0.8824}, fill opacity={1.0}, line width={0.75}, rotate={0}, solid}]
+        table[row sep={\\}]
+        {
+            \\
+            428.0  0.114  \\
+            642.0  0.208  \\
+            856.0  0.388  \\
+            1070.0  0.434  \\
+            1284.0  0.582  \\
+            1498.0  0.624  \\
+            1712.0  0.878  \\
+            1926.0  1.054  \\
+            2140.0  1.071  \\
+        }
+        ;
+    \addlegendentry {Mosek}
+    \addplot[color={rgb,1:red,0.8627;green,0.0784;blue,0.2353}, name path={72e1275f-e6c9-40d9-bfd2-88371eaba162}, draw opacity={1.0}, line width={2}, solid, mark={pentagon*}, mark size={3.75 pt}, mark repeat={1}, mark options={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, fill={rgb,1:red,0.8627;green,0.0784;blue,0.2353}, fill opacity={1.0}, line width={0.75}, rotate={0}, solid}]
+        table[row sep={\\}]
+        {
+            \\
+            428.0  291.946  \\
+            642.0  393.315  \\
+            856.0  469.139  \\
+        }
+        ;
+    \addlegendentry {SCS}
+    \addplot[color={rgb,1:red,1.0;green,0.549;blue,0.0}, name path={ca77816e-106c-47c7-ba07-694cd9e2cf65}, draw opacity={1.0}, line width={2}, solid, mark={square*}, mark size={3.75 pt}, mark repeat={1}, mark options={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, fill={rgb,1:red,1.0;green,0.549;blue,0.0}, fill opacity={1.0}, line width={0.75}, rotate={0}, solid}]
+        table[row sep={\\}]
+        {
+            \\
+            428.0  7.473  \\
+            642.0  10.878  \\
+            856.0  14.634  \\
+            1070.0  18.296  \\
+            1284.0  21.625  \\
+            1498.0  25.223  \\
+            1712.0  29.383  \\
+            1926.0  33.095  \\
+            2140.0  37.608  \\
+        }
+        ;
+    \addlegendentry {COSMO}
+\end{axis}
+\end{tikzpicture}
